@@ -1,0 +1,12 @@
+solarman:
+  login:
+    domain: "home.solarman.cn"
+    username: "myusername@homesmartenergy.co.uk"
+    password: "mypassword"
+  plant:
+    plant_id: 1234567
+
+influxdb:
+  url: "http://localhost:8086"
+  token: "a-long-api-token-here"
+  org: "Personal"
