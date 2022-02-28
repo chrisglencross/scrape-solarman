@@ -17,7 +17,7 @@ TIMESTAMP_FIELDS = {
     'energy_batter_out',
     'power',
     'power_',
-    'power_buy'
+    'power_buy',
     'power_sell',
     'power_useage',
 }
@@ -26,7 +26,7 @@ DAY_SUMMARY_FIELDS = {
     'energy',
     'energy_batter_in',
     'energy_batter_out',
-    'energy_buy'
+    'energy_buy',
     'energy_sell',
     'energy_useage',
     'energy_useage_buy',
