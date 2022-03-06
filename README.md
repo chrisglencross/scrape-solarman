@@ -9,12 +9,15 @@ The Python script has only been tested with my solar setup; it may not work for 
 or without a battery. However, the code should be fairly easy to understand
 and modify for anyone with Python experience.
 
+Note that metrics are saved to InfluxDB with the same field names as used by Solarman, including their spelling
+mistakes: e.g. `useage` instead of `usage`. This isn't a bug.
+
 # Prerequisites
 
-1. Python 3.10 (possibly works with >= 3.8).
+1. Developed with Python 3.10, although possibly works with >= 3.8.
 2. Credentials for logging in to https://home.solarman.cn/ with
 the ability to see your solar plant details in a web browser.
-3. Some solar panels and sunshine.
+3. Some solar panels and some sunshine ☀️.
 
 # Installation
 
