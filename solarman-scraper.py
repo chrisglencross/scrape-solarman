@@ -45,15 +45,18 @@ class SolarmanClient:
     def __init__(self, login_config):
         self.login_config = login_config
         self.session = requests.session()
+        self.login()
+
+    def login(self):
         self.session.post(
             'https://home.solarman.cn/cpro/login/validateLogin.json',
             data={
-                "userName": login_config["username"],
-                "password": login_config["password"],
-                "lan": login_config.get("lan", 2),
-                "userType": login_config.get("userType", "C"),
-                "domain": login_config["domain"]
-            }
+                     "userName": self.login_config["username"],
+                     "password": self.login_config["password"],
+                     "lan": self.login_config.get("lan", 2),
+                     "userType": self.login_config.get("userType", "C"),
+                     "domain": self.login_config["domain"]
+                 }
         )
 
     @retry.retry(tries=5, delay=1, backoff=2, logger=logger)
@@ -141,7 +144,11 @@ class InfluxDBWriter:
 
     @retry.retry(tries=5, delay=1, logger=logger)
     def write_day_summary_data(self, plant_id, measurement_name, day_summary):
-        day_str = day_summary['date']
+        day_str = day_summary.get('date')
+        if not day_str:
+            # This can happen if the date has just rolled and solarman does not have info for the new day
+            self.logger.info(f"No data for date yet: {day_summary} ")
+            return
         # Inconsistent about date format: yyyy-MM-dd or yyyyMMdd
         date_ts = datetime.fromisoformat(day_str) if '-' in day_str else datetime.strptime(day_str, "%Y%m%d")
         point = Point(measurement_name).tag("plant_id", plant_id).time(date_ts, WritePrecision.S)
