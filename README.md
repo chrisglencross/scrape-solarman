@@ -52,3 +52,25 @@ python3.10 -m pip install -r requirements.txt
 ```
 python3.10 ./solarman-scraper.py
 ```
+
+# Grafana Dashboards
+
+The Grafana dashboards I created from this data can be found in the [grafana-dashboards](./grafana-dashboards) directory.
+Screenshots cover the period of the UK winter. I'm hoping for significantly better numbers in the summer months.
+
+## Solar Power Today
+Shows details of solar power generated today, together with electricity consumption and battery charge and discharge.
+![Solar Power Today](./grafana-dashboards/Solar%20Power%20Today.png "Solar Power Today")
+
+## Solar Power History (Daily)
+Shows daily totals of electricity generation, consumption and export.
+![Solar Power History (Daily)](./grafana-dashboards/Solar%20Power%20History%20(Daily).png "Solar Power History (Daily)")
+
+## Solar Finances
+Shows summary information about solar energy used, plus energy bought and sold. Approximate
+cost is included with each figure, helping to estimate the energy cost savings
+from the solar installation.
+
+![Solar Finances](./grafana-dashboards/Solar%20Finances.png "Solar Power Finances")
+
+
