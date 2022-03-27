@@ -1,3 +1,4 @@
+import json
 import time
 import yaml
 from datetime import datetime, timedelta, date
@@ -56,7 +57,8 @@ class SolarmanClient:
                      "lan": self.login_config.get("lan", 2),
                      "userType": self.login_config.get("userType", "C"),
                      "domain": self.login_config["domain"]
-                 }
+                 },
+            timeout=60
         )
 
     @retry.retry(tries=5, delay=1, backoff=2, logger=logger)
@@ -64,7 +66,8 @@ class SolarmanClient:
         plant_id = plant["plant_id"]
         r = self.session.post(
             'https://home.solarman.cn/cpro/epc/plantDetail/showPlantDetailAjax.json',
-            data={"plantId": plant_id}
+            data={"plantId": plant_id},
+            timeout=60
         )
         data = r.json()
         return {
@@ -78,7 +81,8 @@ class SolarmanClient:
         plant_id = plant["plant_id"]
         r = self.session.post(
             'https://home.solarman.cn/cpro/epc/plantDetail/showCharts.json',
-            data={"plantId": plant_id, "type": 1, "date": date, "plantTimezoneId": plant["timezone_id"]}
+            data={"plantId": plant_id, "type": 1, "date": date, "plantTimezoneId": plant["timezone_id"]},
+            timeout=60
         )
         data = r.json()
         return {
@@ -92,7 +96,8 @@ class SolarmanClient:
         plant_id = plant["plant_id"]
         r = self.session.post(
             'https://home.solarman.cn/cpro/epc/plantDetail/showCharts.json',
-            data={"plantId": plant_id, "type": 2, "date": month, "plantTimezoneId": plant["timezone_id"]}
+            data={"plantId": plant_id, "type": 2, "date": month, "plantTimezoneId": plant["timezone_id"]},
+            timeout=60
         )
         data = r.json()
         return {
@@ -106,7 +111,8 @@ class SolarmanClient:
         plant_id = plant["plant_id"]
         r = self.session.post(
             'https://home.solarman.cn/cpro/epc/plantDetail/showSocCharts.json',
-            data={"plantId": plant_id, "type": 1, "date": date, "plantTimezoneId": plant["timezone_id"]}
+            data={"plantId": plant_id, "type": 1, "date": date, "plantTimezoneId": plant["timezone_id"]},
+            timeout=60
         )
         data = r.json()
         return {
@@ -129,7 +135,7 @@ class InfluxDBWriter:
         plant_id = day_data["plantId"]
         chart_data = day_data["chartData"]
         for ts_entry in chart_data:
-            ts = datetime.fromtimestamp(int(ts_entry['date']) / 1000)
+            ts = datetime.utcfromtimestamp(int(ts_entry['date']) / 1000)
             point = Point(measurement_name).tag("plant_id", plant_id).time(ts, WritePrecision.S)
             for key in TIMESTAMP_FIELDS:
                 point.field(key, ts_entry.get(key, 0.0))
@@ -160,7 +166,7 @@ class InfluxDBWriter:
     def write_plant_snapshot(self, measurement_name, plant_snapshot):
         plant_id = plant_snapshot['plantId']
         plant_data = plant_snapshot['plantData']
-        ts = datetime.fromtimestamp(int(plant_data['plantUpdateTime']) / 1000)
+        ts = datetime.utcfromtimestamp(int(plant_data['plantUpdateTime']) / 1000)
         self.logger.info(f"Writing snapshot for {ts}")
         point = Point(measurement_name).tag("plant_id", plant_id).time(ts, WritePrecision.S)
         for key in ['power', 'powerBattery', 'powerGrid', 'powerUseage']:
@@ -172,7 +178,7 @@ class InfluxDBWriter:
         plant_id = day_battery_charge_data['plantId']
         chart_data = day_battery_charge_data["chartData"]
         for epoch_millis, percent in chart_data:
-            ts = datetime.fromtimestamp(int(epoch_millis) / 1000)
+            ts = datetime.utcfromtimestamp(int(epoch_millis) / 1000)
             point = Point(measurement_name).tag("plant_id", plant_id).time(ts, WritePrecision.S)
             point.field("charge_pc", float(percent))
             self.write_api.write("solarman", self.client.org, point)
@@ -234,11 +240,25 @@ yesterday = today - timedelta(1)
 scraper.process_day(yesterday)
 
 while True:
-    # Get current values for now
-    scraper.process_snapshot()
 
-    # Get time series data for today
-    today = date.today()
-    scraper.process_day(today)
+    try:
+
+        # Get current values for now
+        scraper.process_snapshot()
+
+        new_today = date.today()
+
+        # After a date roll do one last scan of the previous day for completeness
+        if new_today != today:
+            scraper.process_day(today)
+            scraper.process_month(today)
+            today = new_today
+
+        # Get time series data for today
+        scraper.process_day(today)
+
+    except json.decoder.JSONDecodeError:
+        # Solarman returns HTML instead of JSON when logged out
+        scraper.solarman.login()
 
     time.sleep(120)
