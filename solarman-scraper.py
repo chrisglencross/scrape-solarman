@@ -117,6 +117,7 @@ class SolarmanClient:
         data = r.json()
         return {
             "plantId": plant_id,
+            "minllis": data["result"]["minllis"],
             "chartData": data["result"]["plantData"]
         }
 
@@ -177,8 +178,12 @@ class InfluxDBWriter:
     def write_day_battery_charge_data(self, measurement_name, day_battery_charge_data):
         plant_id = day_battery_charge_data['plantId']
         chart_data = day_battery_charge_data["chartData"]
+
+        # Strangely, epoch_millis is not UTC-based and there is a minutes-offset
+        minllis = day_battery_charge_data['minllis']
+
         for epoch_millis, percent in chart_data:
-            ts = datetime.utcfromtimestamp(int(epoch_millis) / 1000)
+            ts = datetime.utcfromtimestamp(int(epoch_millis) / 1000 - minllis*60)
             point = Point(measurement_name).tag("plant_id", plant_id).time(ts, WritePrecision.S)
             point.field("charge_pc", float(percent))
             self.write_api.write("solarman", self.client.org, point)
@@ -236,8 +241,9 @@ scraper = SolarmanScraper(config)
 today = date.today()
 scraper.process_month(today)
 
-yesterday = today - timedelta(1)
-scraper.process_day(yesterday)
+backfill_days = 1
+for previous_day in range(backfill_days, 0, -1):
+    scraper.process_day(today - timedelta(previous_day))
 
 while True:
 
