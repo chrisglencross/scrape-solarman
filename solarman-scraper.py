@@ -44,15 +44,18 @@ class SolarmanClient:
     logger = logging.getLogger('SolarmanClient')
 
     def __init__(self, login_config):
+        self.headers = {"user-agent": "curl/7.79.1"}
         self.login_config = login_config
         self.session = requests.session()
         self.login()
 
     def login(self):
-        self.session.post(
+        r = self.session.post(
             'https://home.solarman.cn/cpro/login/validateLogin.json',
+            headers=self.headers,
             data={
                      "userName": self.login_config["username"],
+                     "userNameDisplay": self.login_config["username"],
                      "password": self.login_config["password"],
                      "lan": self.login_config.get("lan", 2),
                      "userType": self.login_config.get("userType", "C"),
@@ -60,12 +63,14 @@ class SolarmanClient:
                  },
             timeout=60
         )
+        data = r.json()
 
-    @retry.retry(tries=5, delay=1, backoff=2, logger=logger)
+    @retry.retry(tries=10, delay=1, backoff=2, logger=logger)
     def get_plant_snapshot(self, plant):
         plant_id = plant["plant_id"]
         r = self.session.post(
             'https://home.solarman.cn/cpro/epc/plantDetail/showPlantDetailAjax.json',
+            headers=self.headers,
             data={"plantId": plant_id},
             timeout=60
         )
@@ -76,11 +81,12 @@ class SolarmanClient:
             "plantData": data["result"]["plantAllWapper"]["plantData"]
         }
 
-    @retry.retry(tries=5, delay=1, backoff=2, logger=logger)
+    @retry.retry(tries=10, delay=1, backoff=2, logger=logger)
     def get_day_data(self, plant, date: str):
         plant_id = plant["plant_id"]
         r = self.session.post(
             'https://home.solarman.cn/cpro/epc/plantDetail/showCharts.json',
+            headers=self.headers,
             data={"plantId": plant_id, "type": 1, "date": date, "plantTimezoneId": plant["timezone_id"]},
             timeout=60
         )
@@ -91,11 +97,12 @@ class SolarmanClient:
             "chartData": data["result"]["chartsDataAll"]
         }
 
-    @retry.retry(tries=5, delay=1, backoff=2, logger=logger)
+    @retry.retry(tries=10, delay=1, backoff=2, logger=logger)
     def get_month_data(self, plant, month: str):
         plant_id = plant["plant_id"]
         r = self.session.post(
             'https://home.solarman.cn/cpro/epc/plantDetail/showCharts.json',
+            headers=self.headers,
             data={"plantId": plant_id, "type": 2, "date": month, "plantTimezoneId": plant["timezone_id"]},
             timeout=60
         )
@@ -106,11 +113,12 @@ class SolarmanClient:
             "chartData": data["result"]["chartsDataAll"]
         }
 
-    @retry.retry(tries=5, delay=1, backoff=2, logger=logger)
+    @retry.retry(tries=10, delay=1, backoff=2, logger=logger)
     def get_day_battery_charge(self, plant, date: str):
         plant_id = plant["plant_id"]
         r = self.session.post(
             'https://home.solarman.cn/cpro/epc/plantDetail/showSocCharts.json',
+            headers=self.headers,
             data={"plantId": plant_id, "type": 1, "date": date, "plantTimezoneId": plant["timezone_id"]},
             timeout=60
         )
@@ -131,7 +139,7 @@ class InfluxDBWriter:
         self.client = InfluxDBClient(**influxdb_config)
         self.write_api = self.client.write_api(write_options=SYNCHRONOUS)
 
-    @retry.retry(tries=5, delay=1, logger=logger)
+    @retry.retry(tries=10, delay=1, logger=logger)
     def write_day_chart_data(self, measurement_name, day_data):
         plant_id = day_data["plantId"]
         chart_data = day_data["chartData"]
@@ -142,14 +150,14 @@ class InfluxDBWriter:
                 point.field(key, ts_entry.get(key, 0.0))
             self.write_api.write("solarman", self.client.org, point)
 
-    @retry.retry(tries=5, delay=1, logger=logger)
+    @retry.retry(tries=10, delay=1, logger=logger)
     def write_month_chart_data(self, measurement_name, month_data):
         plant_id = month_data["plantId"]
         chart_data = month_data["chartData"]
         for day_summary in chart_data:
             self.write_day_summary_data(plant_id, measurement_name, day_summary)
 
-    @retry.retry(tries=5, delay=1, logger=logger)
+    @retry.retry(tries=10, delay=1, logger=logger)
     def write_day_summary_data(self, plant_id, measurement_name, day_summary):
         day_str = day_summary.get('date')
         if not day_str:
@@ -163,7 +171,7 @@ class InfluxDBWriter:
             point.field(key, day_summary.get(key, 0.0))
         self.write_api.write("solarman", self.client.org, point)
 
-    @retry.retry(tries=5, delay=1, logger=logger)
+    @retry.retry(tries=10, delay=1, logger=logger)
     def write_plant_snapshot(self, measurement_name, plant_snapshot):
         plant_id = plant_snapshot['plantId']
         plant_data = plant_snapshot['plantData']
@@ -174,7 +182,7 @@ class InfluxDBWriter:
             point.field(key, float(plant_data[key]))
         self.write_api.write("solarman", self.client.org, point)
 
-    @retry.retry(tries=5, delay=1, logger=logger)
+    @retry.retry(tries=10, delay=1, logger=logger)
     def write_day_battery_charge_data(self, measurement_name, day_battery_charge_data):
         plant_id = day_battery_charge_data['plantId']
         chart_data = day_battery_charge_data["chartData"]
@@ -234,37 +242,44 @@ def daterange(start_date, end_date):
         yield start_date + timedelta(n)
 
 
-with open(".solarman-scraper.yml", "r") as yamlfile:
-    config = yaml.load(yamlfile, Loader=yaml.FullLoader)
-scraper = SolarmanScraper(config)
+@retry.retry(tries=10, delay=60)
+def main():
+    with open(".solarman-scraper.yml", "r") as yamlfile:
+        config = yaml.load(yamlfile, Loader=yaml.FullLoader)
+    scraper = SolarmanScraper(config)
 
-today = date.today()
-scraper.process_month(today)
+    today = date.today()
+    scraper.process_month(today)
 
-backfill_days = 1
-for previous_day in range(backfill_days, 0, -1):
-    scraper.process_day(today - timedelta(previous_day))
+    backfill_days = 1
+    for previous_day in range(backfill_days, 0, -1):
+        scraper.process_day(today - timedelta(previous_day))
 
-while True:
+    while True:
 
-    try:
+        try:
 
-        # Get current values for now
-        scraper.process_snapshot()
+            # Get current values for now
+            scraper.process_snapshot()
 
-        new_today = date.today()
+            new_today = date.today()
 
-        # After a date roll do one last scan of the previous day for completeness
-        if new_today != today:
+            # After a date roll do one last scan of the previous day for completeness
+            if new_today != today:
+                scraper.process_day(today)
+                scraper.process_month(today)
+                today = new_today
+
+            # Get time series data for today
             scraper.process_day(today)
-            scraper.process_month(today)
-            today = new_today
 
-        # Get time series data for today
-        scraper.process_day(today)
+        except json.decoder.JSONDecodeError:
+            # Solarman returns HTML instead of JSON when logged out
+            scraper.solarman.login()
+            raise
 
-    except json.decoder.JSONDecodeError:
-        # Solarman returns HTML instead of JSON when logged out
-        scraper.solarman.login()
+        time.sleep(600)
 
-    time.sleep(120)
+
+if __name__ == '__main__':
+    main()
