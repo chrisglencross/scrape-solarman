@@ -18,7 +18,9 @@ class KiaConnectClient:
     def __init__(self, kia_config):
         self.vehicle_manager = kia.VehicleManager(region=kia_config["region"], brand=kia_config["brand"],
                                 username=kia_config["username"], password=kia_config["password"], pin=kia_config["pin"])
+        self.logger.info(f"Logging in to KIA as {kia_config['username']}")
         self.vehicle_manager.check_and_refresh_token()
+        self.logger.info("Logged in successfully")
 
     @retry.retry(tries=10, delay=1, backoff=2, logger=logger)
     def get_snapshot(self):
