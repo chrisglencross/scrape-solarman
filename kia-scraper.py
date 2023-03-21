@@ -48,6 +48,8 @@ class InfluxDBWriter:
             point.field("ev_battery_percentage", int(car.ev_battery_percentage))
             point.field("ev_battery_is_charging", bool(car.ev_battery_is_charging))
             point.field("ev_battery_is_plugged_in", int(car.ev_battery_is_plugged_in))  # should really be bool but some data persistent as int
+            point.field("12v_battery_percentage", int(car.data["vehicleStatus"]["battery"]["batSoc"]))
+            point.field("12v_battery_state", int(car.data["vehicleStatus"]["battery"]["batState"]))
             self.write_api.write("kia_connect", self.client.org, point)
 
 
@@ -80,7 +82,7 @@ def sleep(seconds):
         time.sleep(min(time_remaining, 60))
 
 
-@retry.retry(tries=10, delay=60)
+# @retry.retry(tries=10, delay=60)
 def main():
     with open(".solarman-scraper.yml", "r") as yamlfile:
         config = yaml.load(yamlfile, Loader=yaml.FullLoader)
