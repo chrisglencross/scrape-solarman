@@ -34,7 +34,7 @@ class KiaConnectClient:
         self.vehicle_manager.check_and_refresh_token()
         self.logger.info("Logged in successfully")
 
-    @retry.retry(tries=10, delay=1, backoff=2, logger=logger)
+    @retry.retry(tries=2, delay=10, backoff=1, logger=logger)
     def get_snapshot(self):
         self.vehicle_manager.check_and_refresh_token()
         self.vehicle_manager.check_and_force_update_vehicles(60 * 60)
