@@ -60,8 +60,8 @@ class InfluxDBWriter:
             point.field("ev_battery_percentage", int(car.ev_battery_percentage))
             point.field("ev_battery_is_charging", bool(car.ev_battery_is_charging))
             point.field("ev_battery_is_plugged_in", int(car.ev_battery_is_plugged_in))  # should really be bool but some data persistent as int
-            point.field("12v_battery_percentage", int(car.data["vehicleStatus"]["battery"]["batSoc"]))
-            point.field("12v_battery_state", int(car.data["vehicleStatus"]["battery"]["batState"]))
+            point.field("12v_battery_percentage", int(car.data["vehicleStatus"]["battery"].get("batSoc", -1)))
+            point.field("12v_battery_state", int(car.data["vehicleStatus"]["battery"].get("batState", -1)))
             self.write_api.write("kia_connect", self.client.org, point)
 
 
