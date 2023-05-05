@@ -54,15 +54,18 @@ class InfluxDBWriter:
     def write_snapshot(self, snapshot):
         for car in snapshot.values():
 
-            self.logger.info(f"Updating {car.name} at {car.last_updated_at}")
-            point = Point("kia").tag("id", car.id).tag("name", car.name).time(car.last_updated_at, WritePrecision.S)
-            point.field("odometer", float(car.odometer))
-            point.field("ev_battery_percentage", int(car.ev_battery_percentage))
-            point.field("ev_battery_is_charging", bool(car.ev_battery_is_charging))
-            point.field("ev_battery_is_plugged_in", int(car.ev_battery_is_plugged_in))  # should really be bool but some data persistent as int
-            point.field("12v_battery_percentage", int(car.data["vehicleStatus"]["battery"].get("batSoc", -1)))
-            point.field("12v_battery_state", int(car.data["vehicleStatus"]["battery"].get("batState", -1)))
-            self.write_api.write("kia_connect", self.client.org, point)
+            if car.odometer is None:
+                self.logger.warning(f"Bad car data received: {car.data}")
+            else:
+                self.logger.info(f"Updating {car.name} at {car.last_updated_at}")
+                point = Point("kia").tag("id", car.id).tag("name", car.name).time(car.last_updated_at, WritePrecision.S)
+                point.field("odometer", float(car.odometer))
+                point.field("ev_battery_percentage", int(car.ev_battery_percentage))
+                point.field("ev_battery_is_charging", bool(car.ev_battery_is_charging))
+                point.field("ev_battery_is_plugged_in", int(car.ev_battery_is_plugged_in))  # should really be bool but some data persistent as int
+                point.field("12v_battery_percentage", int(car.data["vehicleStatus"]["battery"].get("batSoc", -1)))
+                point.field("12v_battery_state", int(car.data["vehicleStatus"]["battery"].get("batState", -1)))
+                self.write_api.write("kia_connect", self.client.org, point)
 
 
 class KiaScraper:
