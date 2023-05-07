@@ -48,7 +48,12 @@ class OctopusClient:
 
     @retry.retry(tries=10, delay=1, backoff=2, logger=logger)
     def get_electricity_tariff_rates(self, tariffs: list[str]):
-        result = {}
+        result = {
+            # Legacy Bulb tariff not returned from Octopus API
+            "E-1R-BULB-SEG-FIX-V1-21-04-01-J": [
+                {'value_exc_vat': 0.05305, 'value_inc_vat': 0.0557, 'valid_from': '1970-01-01T00:00:00Z', 'valid_to': None}
+            ]
+        }
         for tariff in tariffs:
             product = self.product_for_tariff(tariff)
             result[tariff] = self.get_results(f"{self.url}/products/{product}/electricity-tariffs/{tariff}/standard-unit-rates/")
@@ -192,6 +197,7 @@ class OctopusScraper:
                                   if is_current(interval_start, rate))
                 cost = energy * rate_pence / 100
             else:
+                logging.warning(f"No tariff rate found for {tariff_code}")
                 rate_pence = None
                 cost = None
 
