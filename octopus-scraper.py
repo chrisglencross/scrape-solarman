@@ -159,7 +159,7 @@ class OctopusScraper:
                 meter_serial_number = meter["serial_number"]
                 self.logger.info(f"Processing electricity meter {mpan} {meter_serial_number} (export={is_export})")
                 usage = self.octopus.get_electricity_usage(mpan, meter_serial_number)
-                self.process_meter_usage(False, is_export, mpan, meter_serial_number, agreements, usage)
+                self.process_meter_usage(False, is_export, mpan, meter_serial_number, agreements, self.electricity_rates, usage)
 
     def process_gas(self):
         meter_points = [e for p in self.account["properties"] for e in p["gas_meter_points"]]
@@ -170,9 +170,9 @@ class OctopusScraper:
                 meter_serial_number = meter["serial_number"]
                 self.logger.info(f"Processing gas meter {mprn} {meter_serial_number}")
                 usage = self.octopus.get_gas_usage(mprn, meter_serial_number)
-                self.process_meter_usage(True, False, mprn, meter_serial_number, agreements, usage)
+                self.process_meter_usage(True, False, mprn, meter_serial_number, agreements, self.gas_rates, usage)
 
-    def process_meter_usage(self, is_gas, is_export, meter_point_id, meter_serial_number, agreements, usage):
+    def process_meter_usage(self, is_gas, is_export, meter_point_id, meter_serial_number, agreements, tariff_rates, usage):
         for interval in usage:
             interval_start = dateutil.parser.isoparse(interval["interval_start"])
             interval_end = dateutil.parser.isoparse(interval["interval_end"])
@@ -182,9 +182,9 @@ class OctopusScraper:
             tariff_code = next(agreement["tariff_code"]
                                for agreement in agreements
                                if is_current(interval_start, agreement))
-            if tariff_code in self.electricity_rates:
+            if tariff_code in tariff_rates:
                 rate_pence = next(rate["value_inc_vat"]
-                                  for rate in self.electricity_rates[tariff_code]
+                                  for rate in tariff_rates[tariff_code]
                                   if is_current(interval_start, rate))
                 cost = energy * rate_pence / 100
             else:
