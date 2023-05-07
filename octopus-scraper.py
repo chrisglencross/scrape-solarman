@@ -52,6 +52,9 @@ class OctopusClient:
             # Legacy Bulb tariff not returned from Octopus API
             "E-1R-BULB-SEG-FIX-V1-21-04-01-J": [
                 {'value_exc_vat': 0.05305, 'value_inc_vat': 0.0557, 'valid_from': '1970-01-01T00:00:00Z', 'valid_to': None}
+            ],
+            "E-1R-VAR-BB-23-04-01-J": [
+                {'value_exc_vat': 0.332, 'value_inc_vat': 0.3486, 'valid_from': '1970-01-01T00:00:00Z', 'valid_to': None}
             ]
         }
         for tariff in tariffs:
