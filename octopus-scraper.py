@@ -72,7 +72,11 @@ class OctopusClient:
 
     @retry.retry(tries=10, delay=1, backoff=2, logger=logger)
     def get_gas_usage(self, mprn, serial_number):
-        return self.get_results(f"{self.url}/gas-meter-points/{mprn}/meters/{serial_number}/consumption/")
+        result = self.get_results(f"{self.url}/gas-meter-points/{mprn}/meters/{serial_number}/consumption/")
+        # Convert m^3 to kWh
+        for usage in result:
+            usage["consumption"] *= 10.55
+        return result
 
 class InfluxDBWriter:
 
