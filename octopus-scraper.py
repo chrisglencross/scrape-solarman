@@ -51,10 +51,10 @@ class OctopusClient:
         result = {
             # Legacy Bulb tariff not returned from Octopus API
             "E-1R-BULB-SEG-FIX-V1-21-04-01-J": [
-                {'value_exc_vat': 0.05305, 'value_inc_vat': 0.0557, 'valid_from': '1970-01-01T00:00:00Z', 'valid_to': None}
+                {'value_exc_vat': 0.0557, 'value_inc_vat': 0.0557, 'valid_from': '1970-01-01T00:00:00Z', 'valid_to': None}
             ],
             "E-1R-VAR-BB-23-04-01-J": [
-                {'value_exc_vat': 0.332, 'value_inc_vat': 0.3486, 'valid_from': '1970-01-01T00:00:00Z', 'valid_to': None}
+                {'value_exc_vat': 0.3371, 'value_inc_vat': 0.3371*1.05, 'valid_from': '1970-01-01T00:00:00Z', 'valid_to': None}
             ]
         }
         for tariff in tariffs:
@@ -64,7 +64,11 @@ class OctopusClient:
 
     @retry.retry(tries=10, delay=1, backoff=2, logger=logger)
     def get_gas_tariff_rates(self, tariffs: list[str]):
-        result = {}
+        result = {
+            "G-1R-BULB-CRED-VAR-V1-J": [
+                {'value_exc_vat': 0.098050, 'value_inc_vat': 0.098050*1.05, 'valid_from': '1970-01-01T00:00:00Z', 'valid_to': None}
+            ]
+        }
         for tariff in tariffs:
             product = self.product_for_tariff(tariff)
             result[tariff] = self.get_results(f"{self.url}/products/{product}/gas-tariffs/{tariff}/standard-unit-rates/")
