@@ -65,7 +65,7 @@ class InfluxDBWriter:
             if car.ev_battery_is_plugged_in is not None:
                 point.field("ev_battery_is_plugged_in", int(car.ev_battery_is_plugged_in))  # should really be bool but some data persistent as int
 
-            if "vehicleStatus" in car.data and "battery" in car.data["vehicleStatus"]["battery"]:
+            if "vehicleStatus" in car.data and "battery" in car.data["vehicleStatus"]:
                 point.field("12v_battery_percentage", int(car.data["vehicleStatus"]["battery"].get("batSoc", -1)))
                 point.field("12v_battery_state", int(car.data["vehicleStatus"]["battery"].get("batState", -1)))
 
