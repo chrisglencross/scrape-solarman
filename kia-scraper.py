@@ -54,18 +54,22 @@ class InfluxDBWriter:
     def write_snapshot(self, snapshot):
         for car in snapshot.values():
 
-            if car.odometer is None:
-                self.logger.warning(f"Bad car data received: {car.data}")
-            else:
-                self.logger.info(f"Updating {car.name} at {car.last_updated_at}")
-                point = Point("kia").tag("id", car.id).tag("name", car.name).time(car.last_updated_at, WritePrecision.S)
+            self.logger.info(f"Updating {car.name} at {car.last_updated_at}")
+            point = Point("kia").tag("id", car.id).tag("name", car.name).time(car.last_updated_at, WritePrecision.S)
+            if car.odometer is not None:
                 point.field("odometer", float(car.odometer))
+            if car.ev_battery_percentage is not None:
                 point.field("ev_battery_percentage", int(car.ev_battery_percentage))
+            if car.ev_battery_is_charging is not None:
                 point.field("ev_battery_is_charging", bool(car.ev_battery_is_charging))
+            if car.ev_battery_is_plugged_in is not None:
                 point.field("ev_battery_is_plugged_in", int(car.ev_battery_is_plugged_in))  # should really be bool but some data persistent as int
+
+            if "vehicleStatus" in car.data and "battery" in car.data["vehicleStatus"]["battery"]:
                 point.field("12v_battery_percentage", int(car.data["vehicleStatus"]["battery"].get("batSoc", -1)))
                 point.field("12v_battery_state", int(car.data["vehicleStatus"]["battery"].get("batState", -1)))
-                self.write_api.write("kia_connect", self.client.org, point)
+
+            self.write_api.write("kia_connect", self.client.org, point)
 
 
 class KiaScraper:
@@ -97,7 +101,6 @@ def sleep(seconds):
         time.sleep(min(time_remaining, 60))
 
 
-# @retry.retry(tries=10, delay=60)
 def main():
     with open(".solarman-scraper.yml", "r") as yamlfile:
         config = yaml.load(yamlfile, Loader=yaml.FullLoader)
@@ -106,7 +109,7 @@ def main():
     while True:
         # Get current value (KIA throttles maximum number of checks per day)
         scraper.process_snapshot()
-        sleep(30 * 60)
+        sleep(240 * 60)
 
 
 if __name__ == '__main__':
