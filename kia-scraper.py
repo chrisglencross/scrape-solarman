@@ -38,6 +38,8 @@ class KiaConnectClient:
     def get_snapshot(self):
         self.vehicle_manager.check_and_refresh_token()
         self.vehicle_manager.check_and_force_update_vehicles(60 * 60)
+        # Force update doesn't return odometer any more
+        self.vehicle_manager.update_all_vehicles_with_cached_state()
         return self.vehicle_manager.vehicles
 
 
