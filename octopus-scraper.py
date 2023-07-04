@@ -39,7 +39,7 @@ class OctopusClient:
     def get_results(self, url):
         results = []
         while url:
-            response = requests.get(url, auth=self.auth)
+            response = requests.get(url, auth=self.auth, timeout=300)
             data = response.json()
             if "results" in data:
                 results.extend(data["results"])
