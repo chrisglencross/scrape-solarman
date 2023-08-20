@@ -9,8 +9,11 @@ The Python script has only been tested with my solar setup; it may not work for 
 or without a battery. However, the code should be fairly easy to understand
 and modify for anyone with Python experience.
 
-Note that metrics are saved to InfluxDB with the same field names as used by Solarman, including their spelling
-mistakes: e.g. `useage` instead of `usage`. This isn't a bug.
+Note that metrics are saved to InfluxDB with the same field names as used by the old version of the Solarman API,
+including their spelling  mistakes: e.g. `useage` instead of `usage`. This isn't a bug.
+
+I may write a new simplified version of the script which stores data using the same field names as the new Solarman
+API, but that will require some data migration and changes to the Grafana dashboards.
 
 # Prerequisites
 
