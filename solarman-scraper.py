@@ -2,6 +2,7 @@ import json
 import time
 import yaml
 from datetime import datetime, timedelta, date
+from hashlib import sha256
 
 import logging
 import retry
@@ -9,33 +10,41 @@ import requests
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 
+SOLARMAN_API = 'https://globalapi.solarmanpv.com'
+
 FORMAT = '%(asctime)s %(levelname)s [%(name)s] %(message)s'
 logging.basicConfig(format=FORMAT, level=logging.INFO)
 
-TIMESTAMP_FIELDS = {
-    'energy_batter_',
-    'energy_batter_in',
-    'energy_batter_out',
-    'power',
-    'power_',
-    'power_buy',
-    'power_sell',
-    'power_useage',
+DAY_DETAIL_FIELDS = {
+    'B_left_cap1': 'battery_soc',           # battery charging percent
+    'Pcg_dcg1':    'battery_power',         # battery charge/discharge power (discharge is negative)
+    'Etdy_cg1':    'daily_charge_energy',
+    'Etdy_dcg1':   'daily_discharge_energy',
+    'APo_t1':      'power',                 # total AC Output Power of solar panels
+    'PG_Pt1':      'power_grid',            # Buy/sell power (positive is export)
+    't_gc_tdy1':   'daily_grid_feed_in',
+    'Etdy_pu1':    'daily_grid_purchase',
+    'E_Puse_t1':   'power_useage',          # total consumption power
 }
 
+# Maps new Solarman API field names to old API field names
 DAY_SUMMARY_FIELDS = {
-    'energy',
-    'energy_batter_in',
-    'energy_batter_out',
-    'energy_buy',
-    'energy_sell',
-    'energy_useage',
-    'energy_useage_buy',
-    'energy_useage_gen',
-    'energy_useage_out',
-    'self_energy_in',
-    'self_energy_sell',
-    'selfuseage',
+    'generation': 'energy',
+    'charge': 'energy_batter_in',
+    'discharge': 'energy_batter_out',
+    'purchase': 'energy_buy',
+    'grid': 'energy_sell',
+    'consumption': 'energy_useage',
+}
+
+SNAPSHOT_POWER_FIELDS = {
+    'generationPower': 'power',
+    'batteryPower':    'powerBattery',
+    'gridPower':       'powerGrid',
+    'usePower':        'powerUseage', # sic
+    'chargePower':     'chargePower',
+    'dischargePower':  'dischargePower',
+    'purchasePower':   'powerPurchase'
 }
 
 
@@ -44,90 +53,101 @@ class SolarmanClient:
     logger = logging.getLogger('SolarmanClient')
 
     def __init__(self, login_config):
-        self.headers = {"user-agent": "curl/7.79.1"}
+        self.headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "curl"
+        }
         self.login_config = login_config
         self.session = requests.session()
-        self.login()
+        self.auth_headers = self.headers | {"Authorization": f"Bearer {self.login()}"}
 
     def login(self):
+        encoded_password = sha256(self.login_config['password'].encode('utf-8')).hexdigest()
         r = self.session.post(
-            'https://home.solarman.cn/cpro/login/validateLogin.json',
+            f"{SOLARMAN_API}/account/v1.0/token?appId={self.login_config['client_id']}&language=en",
             headers=self.headers,
-            data={
-                     "userName": self.login_config["username"],
-                     "userNameDisplay": self.login_config["username"],
-                     "password": self.login_config["password"],
-                     "lan": self.login_config.get("lan", 2),
-                     "userType": self.login_config.get("userType", "C"),
-                     "domain": self.login_config["domain"]
-                 },
+            json={
+                'appSecret': self.login_config['client_secret'],
+                'email': self.login_config['email'],
+                'password': encoded_password,
+            },
             timeout=60
         )
+        r.raise_for_status()
         data = r.json()
+        token = data['access_token']
+        return token
 
     @retry.retry(tries=10, delay=1, backoff=2, logger=logger)
-    def get_plant_snapshot(self, plant):
-        plant_id = plant["plant_id"]
+    def get_plant_info(self, plant_id):
         r = self.session.post(
-            'https://home.solarman.cn/cpro/epc/plantDetail/showPlantDetailAjax.json',
-            headers=self.headers,
-            data={"plantId": plant_id},
+            f"{SOLARMAN_API}/station/v1.0/base?language=en",
+            headers=self.auth_headers,
+            json={"stationId": plant_id},
             timeout=60
         )
+        r.raise_for_status()
         data = r.json()
-        return {
-            "plantId": plant_id,
-            "timezoneId": data["result"]["plantAllWapper"]["plant"]["timezoneId"],
-            "plantData": data["result"]["plantAllWapper"]["plantData"]
-        }
+        return data
+
+    def get_device_info(self, plant_id):
+        r = self.session.post(
+            f"{SOLARMAN_API}/station/v1.0/device?language=en",
+            headers=self.auth_headers,
+            json={"stationId": plant_id},
+            timeout=60
+        )
+        r.raise_for_status()
+        data = r.json()
+        return data["deviceListItems"]
 
     @retry.retry(tries=10, delay=1, backoff=2, logger=logger)
-    def get_day_data(self, plant, date: str):
-        plant_id = plant["plant_id"]
+    def get_plant_snapshot(self, plant_id):
         r = self.session.post(
-            'https://home.solarman.cn/cpro/epc/plantDetail/showCharts.json',
-            headers=self.headers,
-            data={"plantId": plant_id, "type": 1, "date": date, "plantTimezoneId": plant["timezone_id"]},
+            f"{SOLARMAN_API}/station/v1.0/realTime?language=en",
+            headers=self.auth_headers,
+            json={"stationId": plant_id},
             timeout=60
         )
+        r.raise_for_status()
         data = r.json()
-        return {
-            "plantId": plant_id,
-            "daySummary": data["result"]["plantSta"],
-            "chartData": data["result"]["chartsDataAll"]
-        }
+        return data
 
     @retry.retry(tries=10, delay=1, backoff=2, logger=logger)
-    def get_month_data(self, plant, month: str):
-        plant_id = plant["plant_id"]
+    def get_day_data(self, device, day: str):
         r = self.session.post(
-            'https://home.solarman.cn/cpro/epc/plantDetail/showCharts.json',
-            headers=self.headers,
-            data={"plantId": plant_id, "type": 2, "date": month, "plantTimezoneId": plant["timezone_id"]},
+            f"{SOLARMAN_API}/device/v1.0/historical?language=en",
+            headers=self.auth_headers,
+            json={
+                "deviceId": device["deviceId"],
+                "deviceSn": device["deviceSn"],
+                "startTime": day,
+                "endTime": day,
+                "timeType": 1
+            },
             timeout=60
         )
+        r.raise_for_status()
         data = r.json()
-        return {
-            "plantId": plant_id,
-            "monthSummary": data["result"]["plantSta"],
-            "chartData": data["result"]["chartsDataAll"]
-        }
+        return data
 
     @retry.retry(tries=10, delay=1, backoff=2, logger=logger)
-    def get_day_battery_charge(self, plant, date: str):
-        plant_id = plant["plant_id"]
+    def get_daily_summary_data(self, device, start_date: str, end_date: str):
         r = self.session.post(
-            'https://home.solarman.cn/cpro/epc/plantDetail/showSocCharts.json',
-            headers=self.headers,
-            data={"plantId": plant_id, "type": 1, "date": date, "plantTimezoneId": plant["timezone_id"]},
+            f"{SOLARMAN_API}/device/v1.0/historical?language=en",
+            headers=self.auth_headers,
+            json={
+                "deviceId": device["deviceId"],
+                "deviceSn": device["deviceSn"],
+                "startTime": start_date,
+                "endTime": end_date,
+                "timeType": 2
+            },
             timeout=60
         )
+        r.raise_for_status()
         data = r.json()
-        return {
-            "plantId": plant_id,
-            "minllis": data["result"]["minllis"],
-            "chartData": data["result"]["plantData"]
-        }
+        return data
 
 
 class InfluxDBWriter:
@@ -140,46 +160,63 @@ class InfluxDBWriter:
         self.write_api = self.client.write_api(write_options=SYNCHRONOUS)
 
     @retry.retry(tries=10, delay=1, logger=logger)
-    def write_day_chart_data(self, measurement_name, day_data):
-        plant_id = day_data["plantId"]
-        chart_data = day_data["chartData"]
+    def write_day_chart_data(self, plant_id, measurement_name, day_data):
+        device_sn = day_data["deviceSn"]
+        chart_data = day_data["paramDataList"]
         for ts_entry in chart_data:
-            ts = datetime.utcfromtimestamp(int(ts_entry['date']) / 1000)
-            point = Point(measurement_name).tag("plant_id", plant_id).time(ts, WritePrecision.S)
-            for key in TIMESTAMP_FIELDS:
-                point.field(key, ts_entry.get(key, 0.0))
+            data = {d["key"]: (float(d["value"])/1000 if d.get("unit") == 'W' else float(d["value"]))
+                    for d in ts_entry["dataList"]
+                    if d["key"] in DAY_DETAIL_FIELDS and "value" in d}
+            ts = datetime.utcfromtimestamp(int(ts_entry['collectTime']))
+            point = Point(measurement_name).tag("plant_id", plant_id).tag("device_sn", device_sn).time(ts, WritePrecision.S)
+            for data_key, write_key in DAY_DETAIL_FIELDS.items():
+                point.field(write_key, data.get(data_key, 0.0))
+
+            # Positive and negative values stored in separate series
+            battery_charge_discharge = data.get('Pcg_dcg1', 0.0)
+            if battery_charge_discharge > 0:
+                point.field('energy_batter_in', battery_charge_discharge)
+                point.field('energy_batter_out', 0.0)
+            else:
+                point.field('energy_batter_in', 0.0)
+                point.field('energy_batter_out', battery_charge_discharge)
+
+            grid_power = data.get('PG_Pt1', 0.0)
+            if grid_power > 0:
+                point.field('power_buy', 0.0)
+                point.field('power_sell', grid_power)
+            else:
+                point.field('power_buy', -grid_power)
+                point.field('power_sell', 0.0)
+
             self.write_api.write("solarman", self.client.org, point)
 
     @retry.retry(tries=10, delay=1, logger=logger)
-    def write_month_chart_data(self, measurement_name, month_data):
-        plant_id = month_data["plantId"]
-        chart_data = month_data["chartData"]
+    def write_daily_summary_data(self, plant_id, measurement_name, month_data):
+        device_sn = month_data["deviceSn"]
+        chart_data = month_data["paramDataList"]
         for day_summary in chart_data:
-            self.write_day_summary_data(plant_id, measurement_name, day_summary)
+            self.write_day_summary_data(plant_id, device_sn, measurement_name, day_summary)
 
     @retry.retry(tries=10, delay=1, logger=logger)
-    def write_day_summary_data(self, plant_id, measurement_name, day_summary):
-        day_str = day_summary.get('date')
-        if not day_str:
-            # This can happen if the date has just rolled and solarman does not have info for the new day
-            self.logger.info(f"No data for date yet: {day_summary} ")
-            return
-        # Inconsistent about date format: yyyy-MM-dd or yyyyMMdd
-        date_ts = datetime.fromisoformat(day_str) if '-' in day_str else datetime.strptime(day_str, "%Y%m%d")
-        point = Point(measurement_name).tag("plant_id", plant_id).time(date_ts, WritePrecision.S)
-        for key in DAY_SUMMARY_FIELDS:
-            point.field(key, day_summary.get(key, 0.0))
+    def write_day_summary_data(self, plant_id, device_sn, measurement_name, day_summary):
+        date_ts = datetime.fromisoformat(day_summary["collectTime"])
+        data = {d["key"]: (float(d["value"])/1000 if d.get("unit") == 'W' else float(d["value"]))
+                for d in day_summary["dataList"]
+                if d["key"] in DAY_SUMMARY_FIELDS and "value" in d}
+        point = Point(measurement_name).tag("plant_id", plant_id).tag("device_sn", device_sn).time(date_ts, WritePrecision.S)
+        for data_key, write_key in DAY_SUMMARY_FIELDS.items():
+            point.field(write_key, data.get(data_key, 0.0))
         self.write_api.write("solarman", self.client.org, point)
 
     @retry.retry(tries=10, delay=1, logger=logger)
-    def write_plant_snapshot(self, measurement_name, plant_snapshot):
-        plant_id = plant_snapshot['plantId']
-        plant_data = plant_snapshot['plantData']
-        ts = datetime.utcfromtimestamp(int(plant_data['plantUpdateTime']) / 1000)
+    def write_plant_snapshot(self, plant_id, measurement_name, plant_snapshot):
+        ts = datetime.utcfromtimestamp(int(plant_snapshot['lastUpdateTime']))
         self.logger.info(f"Writing snapshot for {ts}")
         point = Point(measurement_name).tag("plant_id", plant_id).time(ts, WritePrecision.S)
-        for key in ['power', 'powerBattery', 'powerGrid', 'powerUseage']:
-            point.field(key, float(plant_data[key]))
+        for data_key, write_key in SNAPSHOT_POWER_FIELDS.items():
+            value = plant_snapshot.get(data_key) or 0.0
+            point.field(write_key, float(value) / 1000.0)  # old API used kW, not W
         self.write_api.write("solarman", self.client.org, point)
 
     @retry.retry(tries=10, delay=1, logger=logger)
@@ -207,34 +244,41 @@ class SolarmanScraper:
         solarman_config = config["solarman"]
         self.solarman = SolarmanClient(solarman_config["login"])
         self.plant_config = dict(solarman_config["plant"])
+        self.plant_id = self.plant_config["plant_id"]
 
         # Get default config settings
-        if "timezone_id" not in self.plant_config.keys():
-            plant_info = self.solarman.get_plant_snapshot(self.plant_config)
-            self.plant_config["timezone_id"] = plant_info["timezoneId"]
+        if "timezone" not in self.plant_config.keys():
+            plant_info = self.solarman.get_plant_info(self.plant_id)
+            self.plant_config["timezone"] = plant_info["region"]["timezone"]
+
+        self.device_list = self.solarman.get_device_info(self.plant_id)
+        self.inverters = [d for d in self.device_list if d["deviceType"] == "INVERTER"]
 
         influxdb_config = config["influxdb"]
         self.influxdb = InfluxDBWriter(influxdb_config)
 
+
     def process_month(self, date):
-        month = date.strftime("%Y-%m")
-        self.logger.info(f"Processing data for month {month}")
-        month_data = self.solarman.get_month_data(self.plant_config, month)
-        self.influxdb.write_month_chart_data( "solarman_daily_summary", month_data)
+        month_start = date.strftime("%Y-%m-01")
+        month_end = date.strftime("%Y-%m-%d")
+        self.logger.info(f"Processing data for month {month_start}")
+        for device in self.inverters:
+            month_data = self.solarman.get_daily_summary_data(device, month_start, month_end)
+            self.influxdb.write_daily_summary_data(self.plant_id, "solarman_daily_summary", month_data)
 
     def process_day(self, date):
-        self.logger.info(f"Processing data for date {date}")
-        day_data = self.solarman.get_day_data(self.plant_config, date.strftime("%Y/%m/%d"))
-        plant_id = day_data["plantId"]
-        self.influxdb.write_day_summary_data(plant_id, "solarman_daily_summary", day_data["daySummary"])
-        self.influxdb.write_day_chart_data("solarman", day_data)
-        day_battery_charge_data = self.solarman.get_day_battery_charge(self.plant_config, date.strftime("%Y/%m/%d"))
-        self.influxdb.write_day_battery_charge_data("solarman_battery", day_battery_charge_data)
+        day = date.strftime("%Y-%m-%d")
+        self.logger.info(f"Processing data for date {day}")
+        for device in self.inverters:
+            day_data = self.solarman.get_day_data(device, day)
+            self.influxdb.write_day_chart_data(self.plant_id, "solarman", day_data)
+            day_summary_data = self.solarman.get_daily_summary_data(device, day, day)
+            self.influxdb.write_daily_summary_data(self.plant_id, "solarman_daily_summary", day_summary_data)
 
     def process_snapshot(self):
         self.logger.info(f"Processing snapshot")
-        plant_snapshot = self.solarman.get_plant_snapshot(self.plant_config)
-        self.influxdb.write_plant_snapshot("solarman_power", plant_snapshot)
+        plant_snapshot = self.solarman.get_plant_snapshot(self.plant_id)
+        self.influxdb.write_plant_snapshot(self.plant_id, "solarman_power", plant_snapshot)
 
 
 def daterange(start_date, end_date):
@@ -242,7 +286,7 @@ def daterange(start_date, end_date):
         yield start_date + timedelta(n)
 
 
-@retry.retry(tries=10, delay=60)
+# @retry.retry(tries=10, delay=60)
 def main():
     with open(".solarman-scraper.yml", "r") as yamlfile:
         config = yaml.load(yamlfile, Loader=yaml.FullLoader)
@@ -251,7 +295,7 @@ def main():
     today = date.today()
     scraper.process_month(today)
 
-    backfill_days = 1
+    backfill_days = 7
     for previous_day in range(backfill_days, 0, -1):
         scraper.process_day(today - timedelta(previous_day))
 
