@@ -1,7 +1,7 @@
 import time
 
 import yaml
-from datetime import timedelta, date
+from datetime import datetime, timedelta, date, timezone
 import dateutil.parser
 
 import logging
@@ -10,6 +10,8 @@ import requests
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 from requests.auth import HTTPBasicAuth
+
+BACKFILL_DAYS=4
 
 FORMAT = '%(asctime)s %(levelname)s [%(name)s] %(message)s'
 logging.basicConfig(format=FORMAT, level=logging.INFO)
@@ -64,15 +66,21 @@ class OctopusClient:
 
     @retry.retry(tries=10, delay=1, backoff=2, logger=logger)
     def get_electricity_usage(self, mpan, serial_number):
-        return self.get_results(f"{self.url}/electricity-meter-points/{mpan}/meters/{serial_number}/consumption/")
+        return self.get_results(f"{self.url}/electricity-meter-points/{mpan}/meters/{serial_number}/consumption/?period_from={self.period_from()}")
 
     @retry.retry(tries=10, delay=1, backoff=2, logger=logger)
     def get_gas_usage(self, mprn, serial_number):
-        result = self.get_results(f"{self.url}/gas-meter-points/{mprn}/meters/{serial_number}/consumption/")
+        result = self.get_results(f"{self.url}/gas-meter-points/{mprn}/meters/{serial_number}/consumption/?period_from={self.period_from()}")
         # Convert m^3 to kWh with 1.02264
         for usage in result:
             usage["consumption"] *= (1.02264 * 39.0 / 3.6)
         return result
+
+    def period_from(self, days_ago=BACKFILL_DAYS):
+      period_from = datetime.now(tz=timezone.utc) - timedelta(days_ago)
+      return period_from.strftime("%Y-%m-%d %H:%M")
+     
+     
 
 class InfluxDBWriter:
 
@@ -176,6 +184,7 @@ class OctopusScraper:
                 self.process_meter_usage(True, False, mprn, meter_serial_number, agreements, self.get_gas_tariff, usage)
 
     def process_meter_usage(self, is_gas, is_export, meter_point_id, meter_serial_number, agreements, get_tariff, usage):
+        self.logger.info(f"Processing {len(usage)} records for meter {meter_serial_number}")
         for interval in usage:
             interval_start = dateutil.parser.isoparse(interval["interval_start"])
             interval_end = dateutil.parser.isoparse(interval["interval_end"])

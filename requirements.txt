@@ -2,5 +2,5 @@ requests==2.31.0
 retry==0.9.2
 pyyaml==6.0
 influxdb-client==1.36.1
-hyundai_kia_connect_api==3.3.11
+hyundai_kia_connect_api==3.10.5
 cachetools==5.3.0
