@@ -1,12 +1,42 @@
+# Needed for solarman-scraper, details from solarman
 solarman:
   login:
-    domain: "home.solarman.cn"
-    username: "myusername@homesmartenergy.co.uk"
+    username: "myusername@example.com"
     password: "mypassword"
+    client_id: <your client id from solarman>
+    client_secret: <your client secret>
   plant:
-    plant_id: 1234567
+    plant_id: 999999
 
+# Needed for zappi-scraper, details from myenergi.com
+myenergi:
+  hub_serial: <serial number>
+  hub_password: <password>
+
+# Needed for kia-scraper, details from KIA Connect app
+kia:
+  brand: 1   # Kia
+  region: 1  # Europe
+  username: "myusername@example.com"
+  password: "password"
+  pin: "pin"
+
+# Needed for octopus-scraper
+octopus:
+  account: "octopus account number"
+  key: "octopus key"
+
+# Needed for weather-scraper (UK only?)
+met_office:
+  location: "London"
+  longitude: 0.0
+  latitude: 51.1
+  credentials:
+    clientId: "clientid"
+    secret: "secret"
+
+# Needed for all scrapers to write data
 influxdb:
   url: "http://localhost:8086"
-  token: "a-long-api-token-here"
-  org: "Personal"
+  token: "myinfluxtoken"
+  org: "myinfluxorg"
