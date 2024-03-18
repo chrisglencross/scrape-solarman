@@ -113,15 +113,17 @@ class MetOfficeClient:
         result = self.cache.get(path)
         if not result:
 
-            url = f"https://api-metoffice.apiconnect.ibmcloud.com/metoffice/production/v0/forecasts/point/{path}"
+            url = f"https://data.hub.api.metoffice.gov.uk/sitespecific/v0/point/{path}"
+            # url = f"https://api-metoffice.apiconnect.ibmcloud.com/metoffice/production/v0/forecasts/point/{path}"
             params = {
                 "latitude": self.latitude,
                 "longitude": self.longitude
             }
             headers = {
                 "accept": "application/json",
-                "x-ibm-client-id": self.credentials['clientId'],
-                "x-ibm-client-secret": self.credentials['secret']
+                "apikey": self.credentials['apikey']
+                # "x-ibm-client-id": self.credentials['clientId'],
+                # "x-ibm-client-secret": self.credentials['secret']
             }
             response = requests.get(url, params=params, headers=headers)
             result = response.json()
