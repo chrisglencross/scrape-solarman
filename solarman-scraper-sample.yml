@@ -32,8 +32,7 @@ met_office:
   longitude: 0.0
   latitude: 51.1
   credentials:
-    clientId: "clientid"
-    secret: "secret"
+    apikey: "apikey from met office API"
 
 # Needed for all scrapers to write data
 influxdb:
