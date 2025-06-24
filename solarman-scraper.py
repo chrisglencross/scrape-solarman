@@ -164,7 +164,7 @@ class InfluxDBWriter:
         device_sn = day_data["deviceSn"]
         chart_data = day_data["paramDataList"]
         for ts_entry in chart_data:
-            data = {d["key"]: (float(d["value"])/1000 if d.get("unit") == 'W' else float(d["value"]))
+            data = {d["key"]: (float(d["value"])/1000.0 if d.get("unit") == 'W' else float(d["value"]))
                     for d in ts_entry["dataList"]
                     if d["key"] in DAY_DETAIL_FIELDS and "value" in d}
             ts = datetime.utcfromtimestamp(int(ts_entry['collectTime']))
