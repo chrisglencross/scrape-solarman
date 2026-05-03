@@ -111,7 +111,7 @@ def main():
     while True:
         # Get current value (KIA throttles maximum number of checks per day)
         scraper.process_snapshot()
-        sleep(240 * 60)
+        sleep(12 * 60 * 60)
 
 
 if __name__ == '__main__':
