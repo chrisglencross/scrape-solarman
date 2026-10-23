@@ -199,7 +199,9 @@ class OctopusScraper:
                               for rate in tariff_rates
                               if is_current(interval_start, rate)), None)
             if rate_pence is None:
-                raise KeyError(f"Rate not found for tariff {tariff_code} at {interval_start}")
+                # raise KeyError(f"Rate not found for tariff {tariff_code} at {interval_start}")
+                self.logger.error(f"Rate not found for tariff {tariff_code} at {interval_start}")
+                rate_pence = 0.0
             cost = energy * rate_pence / 100
 
             self.influxdb.write_snapshot(

@@ -11,18 +11,6 @@ from influxdb_client.client.write_api import SYNCHRONOUS
 FORMAT = '%(asctime)s %(levelname)s [%(name)s] %(message)s'
 logging.basicConfig(format=FORMAT, level=logging.INFO)
 
-# Monkeypatch requests library to add a timeout
-base_requests_post = requests.post
-def requests_post(url, **kwargs):
-  return base_requests_post(url, **kwargs, timeout=30)
-requests.post = requests_post
-
-base_requests_get = requests.get
-def requests_get(url, **kwargs):
-  return base_requests_get(url, **kwargs, timeout=30)
-requests.get = requests_get
-
-
 class KiaConnectClient:
 
     logger = logging.getLogger('KiaConnectClient')
