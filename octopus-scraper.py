@@ -12,7 +12,7 @@ from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 from requests.auth import HTTPBasicAuth
 
-BACKFILL_DAYS=4
+BACKFILL_DAYS=65
 
 FORMAT = '%(asctime)s %(levelname)s [%(name)s] %(message)s'
 logging.basicConfig(format=FORMAT, level=logging.INFO)
@@ -33,17 +33,14 @@ class OctopusTariff:
     def get_rate_pence_inc_vat(self, interval_start: datetime, interval_end: datetime):
 
         # Not sure about time zone here
-        time_of_day = interval_start.time().strftime("%H:%M")
+        time_of_day = interval_start.astimezone(pytz.timezone('Europe/London')).strftime("%H:%M")
         if time_of_day >= "23:30" or "00:00" <= time_of_day < "05:30":
-            tariff_rates = self.night_rates
+            dual_rates = self.night_rates
         else:
-            tariff_rates = self.day_rates
-        if not tariff_rates:
-            tariff_rates = self.standard_rates
+            dual_rates = self.day_rates
 
-        return next((rate["value_inc_vat"]
-                           for rate in tariff_rates
-                           if is_current(interval_start, rate)), None)
+        return next((rate["value_inc_vat"] for rate in dual_rates if is_current(interval_start, rate)), None) or \
+               next((rate["value_inc_vat"] for rate in self.standard_rates if is_current(interval_start, rate)), None)
 
 class OctopusClient:
 

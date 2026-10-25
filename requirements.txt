@@ -4,3 +4,4 @@ pyyaml==6.0.3
 influxdb-client==1.50.0
 hyundai_kia_connect_api==4.39.0
 cachetools==7.1.1
+pytz==2026.5
