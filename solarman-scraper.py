@@ -1,7 +1,7 @@
 import json
 import time
 import yaml
-from datetime import datetime, timedelta, date
+import datetime
 from hashlib import sha256
 
 import logging
@@ -75,6 +75,8 @@ class SolarmanClient:
         )
         r.raise_for_status()
         data = r.json()
+        if not data['success']:
+            raise IOError(f"Login error: {data}")
         token = data['access_token']
         return token
 
@@ -167,7 +169,7 @@ class InfluxDBWriter:
             data = {d["key"]: (float(d["value"])/1000.0 if d.get("unit") == 'W' else float(d["value"]))
                     for d in ts_entry["dataList"]
                     if d["key"] in DAY_DETAIL_FIELDS and "value" in d}
-            ts = datetime.utcfromtimestamp(int(ts_entry['collectTime']))
+            ts = datetime.datetime.fromtimestamp(int(ts_entry['collectTime']), datetime.UTC)
             point = Point(measurement_name).tag("plant_id", plant_id).tag("device_sn", device_sn).time(ts, WritePrecision.S)
             for data_key, write_key in DAY_DETAIL_FIELDS.items():
                 point.field(write_key, data.get(data_key, 0.0))
@@ -200,7 +202,7 @@ class InfluxDBWriter:
 
     @retry.retry(tries=10, delay=1, logger=logger)
     def write_day_summary_data(self, plant_id, device_sn, measurement_name, day_summary):
-        date_ts = datetime.fromisoformat(day_summary["collectTime"])
+        date_ts = datetime.datetime.fromisoformat(day_summary["collectTime"])
         data = {d["key"]: (float(d["value"])/1000 if d.get("unit") == 'W' else float(d["value"]))
                 for d in day_summary["dataList"]
                 if d["key"] in DAY_SUMMARY_FIELDS and "value" in d}
@@ -211,7 +213,7 @@ class InfluxDBWriter:
 
     @retry.retry(tries=10, delay=1, logger=logger)
     def write_plant_snapshot(self, plant_id, measurement_name, plant_snapshot):
-        ts = datetime.utcfromtimestamp(int(plant_snapshot['lastUpdateTime']))
+        ts = datetime.datetime.fromtimestamp(int(plant_snapshot['lastUpdateTime']), datetime.UTC)
         self.logger.info(f"Writing snapshot for {ts}")
         point = Point(measurement_name).tag("plant_id", plant_id).time(ts, WritePrecision.S)
         for data_key, write_key in SNAPSHOT_POWER_FIELDS.items():
@@ -228,7 +230,7 @@ class InfluxDBWriter:
         minllis = day_battery_charge_data['minllis']
 
         for epoch_millis, percent in chart_data:
-            ts = datetime.utcfromtimestamp(int(epoch_millis) / 1000 - minllis*60)
+            ts = datetime.datetime.fromtimestamp(int(epoch_millis) / 1000 - minllis*60)
             point = Point(measurement_name).tag("plant_id", plant_id).time(ts, WritePrecision.S)
             point.field("charge_pc", float(percent))
             self.write_api.write("solarman", self.client.org, point)
@@ -283,7 +285,7 @@ class SolarmanScraper:
 
 def daterange(start_date, end_date):
     for n in range(int((end_date - start_date).days)):
-        yield start_date + timedelta(n)
+        yield start_date + datetime.timedelta(n)
 
 
 # @retry.retry(tries=10, delay=60)
@@ -292,12 +294,12 @@ def main():
         config = yaml.load(yamlfile, Loader=yaml.FullLoader)
     scraper = SolarmanScraper(config)
 
-    today = date.today()
+    today = datetime.date.today()
     scraper.process_month(today)
 
     backfill_days = 7
     for previous_day in range(backfill_days, 0, -1):
-        scraper.process_day(today - timedelta(previous_day))
+        scraper.process_day(today - datetime.timedelta(previous_day))
 
     while True:
 
@@ -306,7 +308,7 @@ def main():
             # Get current values for now
             scraper.process_snapshot()
 
-            new_today = date.today()
+            new_today = datetime.date.today()
 
             # After a date roll do one last scan of the previous day for completeness
             if new_today != today:
