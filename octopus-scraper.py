@@ -13,7 +13,7 @@ from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 from requests.auth import HTTPBasicAuth
 
-BACKFILL_DAYS=65
+BACKFILL_DAYS=4
 
 FORMAT = '%(asctime)s %(levelname)s [%(name)s] %(message)s'
 logging.basicConfig(format=FORMAT, level=logging.INFO)
