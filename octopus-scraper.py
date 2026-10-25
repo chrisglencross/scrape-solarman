@@ -1,6 +1,7 @@
 import time
 from functools import lru_cache
 
+import pytz
 import yaml
 from datetime import datetime, timedelta, date, timezone
 import dateutil.parser
@@ -32,7 +33,7 @@ class OctopusTariff:
 
     def get_rate_pence_inc_vat(self, interval_start: datetime, interval_end: datetime):
 
-        # Not sure about time zone here
+        # Octopus UK split rate tariff times
         time_of_day = interval_start.astimezone(pytz.timezone('Europe/London')).strftime("%H:%M")
         if time_of_day >= "23:30" or "00:00" <= time_of_day < "05:30":
             dual_rates = self.night_rates
