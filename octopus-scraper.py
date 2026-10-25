@@ -173,11 +173,17 @@ class OctopusScraper:
 
         # This tariff not found, replace with a similar one
         if tariff_code == 'E-1R-IOG-SMB-VAR-24-10-29-J':
-            tariff_code = "E-1R-IOG-SMB-FIX-12M-26-09-18-J"
+            tariff_codes = ["E-1R-IOG-SMB-FIX-12M-26-09-18-J", "E-1R-GO-VAR-22-10-14-J"]
+        else:
+            tariff_codes = [tariff_code]
 
-        standard_rates = self.octopus.get_electricity_tariff_rates(tariff_code, "standard-unit-rates")
-        day_rates = self.octopus.get_electricity_tariff_rates(tariff_code, "day-unit-rates")
-        night_rates = self.octopus.get_electricity_tariff_rates(tariff_code, "night-unit-rates")
+        standard_rates = []
+        day_rates = []
+        night_rates = []
+        for t in tariff_codes:
+            standard_rates.extend(self.octopus.get_electricity_tariff_rates(t, "standard-unit-rates"))
+            day_rates.extend(self.octopus.get_electricity_tariff_rates(t, "day-unit-rates"))
+            night_rates.extend(self.octopus.get_electricity_tariff_rates(t, "night-unit-rates"))
         return OctopusTariff(tariff_code, standard_rates, night_rates, day_rates)
 
     @lru_cache(maxsize=None)
