@@ -1,4 +1,5 @@
 import time
+from functools import lru_cache
 
 import yaml
 from datetime import datetime, timedelta, date, timezone
@@ -21,6 +22,28 @@ def is_current(now, record):
     valid_to = dateutil.parser.isoparse(record["valid_to"]) if record["valid_to"] else None
     return valid_from <= now and (valid_to is None or valid_to > now)
 
+class OctopusTariff:
+
+    def __init__(self, tariff_code: str, standard_rates: list, night_rates: list, day_rates: list):
+        self.tariff_code = tariff_code
+        self.standard_rates = standard_rates
+        self.night_rates = night_rates
+        self.day_rates = day_rates
+
+    def get_rate_pence_inc_vat(self, interval_start: datetime, interval_end: datetime):
+
+        # Not sure about time zone here
+        time_of_day = interval_start.time().strftime("%H:%M")
+        if time_of_day >= "23:30" or "00:00" <= time_of_day < "05:30":
+            tariff_rates = self.night_rates
+        else:
+            tariff_rates = self.day_rates
+        if not tariff_rates:
+            tariff_rates = self.standard_rates
+
+        return next((rate["value_inc_vat"]
+                           for rate in tariff_rates
+                           if is_current(interval_start, rate)), None)
 
 class OctopusClient:
 
@@ -49,18 +72,19 @@ class OctopusClient:
         return results
 
     @retry.retry(tries=10, delay=1, backoff=2, logger=logger)
-    def get_electricity_tariff_rates(self, tariff: str):
+    def get_electricity_tariff_rates(self, tariff: str, rate_name: str):
         product = self.product_for_tariff(tariff)
         return self.get_results(
-            f"{self.url}/products/{product}/electricity-tariffs/{tariff}/standard-unit-rates/")
+            f"{self.url}/products/{product}/electricity-tariffs/{tariff}/{rate_name}/")
 
     @retry.retry(tries=10, delay=1, backoff=2, logger=logger)
-    def get_gas_tariff_rates(self, tariff: str):
+    def get_gas_tariff_rates(self, tariff: str, rate_name: str):
         product = self.product_for_tariff(tariff)
         return self.get_results(
-            f"{self.url}/products/{product}/gas-tariffs/{tariff}/standard-unit-rates/")
+            f"{self.url}/products/{product}/gas-tariffs/{tariff}/{rate_name}/")
 
-    def product_for_tariff(self, tariff: str):
+    @staticmethod
+    def product_for_tariff(tariff: str):
         parts = tariff.split("-")
         return "-".join(parts[2:-1])
 
@@ -76,7 +100,8 @@ class OctopusClient:
             usage["consumption"] *= (1.02264 * 39.0 / 3.6)
         return result
 
-    def period_from(self, days_ago=BACKFILL_DAYS):
+    @staticmethod
+    def period_from(days_ago=BACKFILL_DAYS):
       period_from = datetime.now(tz=timezone.utc) - timedelta(days_ago)
       return period_from.strftime("%Y-%m-%d %H:%M")
      
@@ -136,23 +161,29 @@ class OctopusScraper:
 
     def get_account_info(self):
         self.account = self.octopus.get_account()
+
+    @lru_cache(maxsize=None)
+    def get_electricity_tariff(self, tariff_code: str) -> OctopusTariff:
         # Legacy Bulb tariff not returned from Octopus API
-        self.electricity_rates = {
-            "E-1R-BULB-SEG-FIX-V1-21-04-01-J": [
-                {'value_exc_vat': 0.0557, 'value_inc_vat': 0.0557, 'valid_from': '1970-01-01T00:00:00Z', 'valid_to': None}
-            ]
-        }
-        self.gas_rates = {}
+        if tariff_code == "E-1R-BULB-SEG-FIX-V1-21-04-01-J":
+            return OctopusTariff(tariff_code,
+                                 [{'value_exc_vat': 0.0557, 'value_inc_vat': 0.0557, 'valid_from': '1970-01-01T00:00:00Z', 'valid_to': None}],
+                                 [],
+                                 [])
 
-    def get_electricity_tariff(self, tariff_code: str):
-        if tariff_code not in self.electricity_rates:
-            self.electricity_rates[tariff_code] = self.octopus.get_electricity_tariff_rates(tariff_code)
-        return self.electricity_rates[tariff_code]
+        # This tariff not found, replace with a similar one
+        if tariff_code == 'E-1R-IOG-SMB-VAR-24-10-29-J':
+            tariff_code = "E-1R-IOG-SMB-FIX-12M-26-09-18-J"
 
+        standard_rates = self.octopus.get_electricity_tariff_rates(tariff_code, "standard-unit-rates")
+        day_rates = self.octopus.get_electricity_tariff_rates(tariff_code, "day-unit-rates")
+        night_rates = self.octopus.get_electricity_tariff_rates(tariff_code, "night-unit-rates")
+        return OctopusTariff(tariff_code, standard_rates, night_rates, day_rates)
+
+    @lru_cache(maxsize=None)
     def get_gas_tariff(self, tariff_code: str):
-        if tariff_code not in self.gas_rates:
-            self.gas_rates[tariff_code] = self.octopus.get_gas_tariff_rates(tariff_code)
-        return self.gas_rates[tariff_code]
+        standard_rates = self.octopus.get_gas_tariff_rates(tariff_code, "standard-unit-rates")
+        return OctopusTariff(tariff_code, standard_rates, [], [])
 
     def process_snapshot(self):
         self.logger.info(f"Processing snapshot")
@@ -188,19 +219,17 @@ class OctopusScraper:
         for interval in usage:
             interval_start = dateutil.parser.isoparse(interval["interval_start"])
             interval_end = dateutil.parser.isoparse(interval["interval_end"])
-            energy = interval["consumption"]  # kWh
+            energy = float(interval["consumption"])  # kWh
             duration = (interval_end - interval_start).total_seconds()
             power = energy * 1000 / duration  # Average Watts
             tariff_code = next(agreement["tariff_code"]
                                for agreement in agreements
                                if is_current(interval_start, agreement))
             tariff_rates = get_tariff(tariff_code)
-            rate_pence = next((rate["value_inc_vat"]
-                              for rate in tariff_rates
-                              if is_current(interval_start, rate)), None)
+            rate_pence = tariff_rates.get_rate_pence_inc_vat(interval_start, interval_end)
             if rate_pence is None:
                 raise KeyError(f"Rate not found for tariff {tariff_code} at {interval_start}")
-            cost = energy * rate_pence / 100
+            cost = float(energy) * float(rate_pence) / 100.0
 
             self.influxdb.write_snapshot(
                 account=self.account["number"],
